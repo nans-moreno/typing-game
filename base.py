@@ -30,7 +30,6 @@ class RenderGame:
         self.screen_width = screen_width
         self.screen_height = screen_height
         self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
-        #self.fond = pygame.image.load("background.jpg").convert()
         pygame.display.set_caption(game_name)
         self.white = (255, 255, 255)
         self.black = (0, 0, 0)
@@ -44,34 +43,44 @@ class RenderGame:
         label = self.font.render(text, True, color)
         self.screen.blit(label, (x, y))
 
-class FruitSlicerGame: #Containt game rules and the run
-    _game_instance = None  # Design pattern Singleton allows to have one instance of the game if we launch two time the same class
+
+class FruitSlicerGame:
+    _game_instance = None  
 
     def __new__(cls, *args, **kwargs):
         if cls._game_instance is None:
-            # Create an instance if none is existing
             cls._game_instance = super().__new__(cls)
         return cls._game_instance
 
     def __init__(self):
         pygame.init()
-        self.render_game = RenderGame(800, 600, "Fruit Slicer") 
-        self.SPAWN_FRUIT_EVENT = pygame.USEREVENT + 1
-        pygame.time.set_timer(self.SPAWN_FRUIT_EVENT, random.randint(1000, 2000)) 
-        self.fruits = []   
-        self.life = 3   
+        self.render_game = RenderGame(800, 600, "Fruit Slicer")
+        self.life = 3  
+        self.fruits = [] 
+        self.last_spawn_time = pygame.time.get_ticks()  
+        self.spawn_delay = random.randint(1000, 2000) 
 
-#    def life_player(self, event):
- #       if event.key != pygame.K_d or pygame.K_f or pygame.K_g:
-  #          self.life -= 1
+    def spawn_fruit(self):
+        """Fait apparaître un fruit à un intervalle aléatoire."""
+        current_time = pygame.time.get_ticks()
+        if current_time - self.last_spawn_time > self.spawn_delay:
+            new_fruit = Fruit(
+                x=random.randint(200, 600),
+                y=600 - 50,
+                velocity_x=random.uniform(-3, 3),
+                velocity_y=random.uniform(15, 25),
+                gravity=0.5
+            )
+            self.fruits.append(new_fruit)
+            self.last_spawn_time = current_time
+            self.spawn_delay = random.randint(1000, 2000)
 
     def game_status(self):
-        if self.life == 0:
+        if self.life <= 0:
             return "lose"
-        if self.life > 0:
-            return self.life
+        return self.life
 
-    def run(self): #Game loop
+    def run(self):  
         clock = pygame.time.Clock()
         running = True
 
@@ -81,47 +90,44 @@ class FruitSlicerGame: #Containt game rules and the run
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
+
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_d:
                         print("Touche D pressée !")
-                        #RAJOUTER EVENEMENT
+                        for fruit in self.fruits:
+                            fruit.x += 10  # Déplace tous les fruits vers la droite
                     elif event.key == pygame.K_f:
                         print("Touche F pressée !")
-                        #RAJOUTER EVENEMENT
+                        for fruit in self.fruits:
+                            fruit.y -= 10  # Déplace tous les fruits vers le haut
                     elif event.key == pygame.K_g:
                         print("Touche G pressée !")
-                        #RAJOUTER EVENEMENT
-                    elif event.key != pygame.K_d or pygame.K_f or pygame.K_g:
+                        for fruit in self.fruits:
+                            fruit.velocity_y += 1  # Accélère la chute des fruits
+                    elif event.key not in [pygame.K_d, pygame.K_f, pygame.K_g]:
                         self.life -= 1
-                        print(self.life)
-                
-                game_status = self.game_status()
-                if game_status == "lose":
-                    self.render_game.draw_text(f"You don't have any life left.", 230, 280, self.render_game.red)
-                elif event.type == self.SPAWN_FRUIT_EVENT:
-                    new_fruit = Fruit(
-                        x=random.randint(200, 600),
-                        y=600 - 50,
-                        velocity_x=random.uniform(-3, 3),
-                        velocity_y=random.uniform(15, 25),
-                        gravity=0.5
-                    )
-                    self.fruits.append(new_fruit)
-                    # Redémarrer le timer avec un nouvel intervalle aléatoire
-                    pygame.time.set_timer(self.SPAWN_FRUIT_EVENT, random.randint(1000, 2000))
+                        print(f"Vie restante: {self.life}")
 
-                # Mise à jour et affichage des fruits
-                self.fruits = [fruit for fruit in self.fruits if fruit.y < self.render_game.screen_height]  # Supprime les fruits hors écran
-                for fruit in self.fruits:
-                    fruit.update()
-                    fruit.draw(self.render_game.screen)
+            # Vérifie si un fruit doit apparaître
+            self.spawn_fruit()
 
-                pygame.display.flip()
-                clock.tick(30)  # FPS
-            
+            # Mise à jour et affichage des fruits
+            self.fruits = [fruit for fruit in self.fruits if fruit.y < self.render_game.screen_height]  
+            for fruit in self.fruits:
+                fruit.update()
+                fruit.draw(self.render_game.screen)
 
-        pygame.quit()  
+            # Affichage du statut du jeu
+            game_status = self.game_status()
+            if game_status == "lose":
+                self.render_game.draw_text("You don't have any life left.", 230, 280, self.render_game.red)
+
+            pygame.display.flip()
+            clock.tick(30)  
+
+        pygame.quit()
+
 
 if __name__ == "__main__":
     game = FruitSlicerGame()
-    game.run()         
+    game.run()
