@@ -1,0 +1,6 @@
+{
+    "Player": {
+        "name": "Player",
+        "high_score": 110
+    }
+}
