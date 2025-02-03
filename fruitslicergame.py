@@ -1,10 +1,11 @@
 import pygame
 import random
+import json
 from fruits import Fruit
 from rendergame import RenderGame
-from config import KEY_MAPPING
+from config import KEY_MAPPING, POINTS_PER_FRUIT
 
-pygame.init()
+pygame.init()  # Vérif à supprimer si besoin
 
 class FruitSlicerGame:
     _game_instance = None  
@@ -17,76 +18,190 @@ class FruitSlicerGame:
     def __init__(self):
         pygame.init()
         self.render_game = RenderGame(800, 600, "Fruit Slicer")
-        self.life = 3  
-        self.fruits = [] 
-        self.last_spawn_time = pygame.time.get_ticks()  
+ 
+        self.state = "menu"
+        self.menu_options = [
+            {"text": "Play", "rect": pygame.Rect(300, 200, 200, 50), "action": "game"},
+            {"text": "Scores", "rect": pygame.Rect(300, 300, 200, 50), "action": "score"},
+            {"text": "Quit", "rect": pygame.Rect(300, 400, 200, 50), "action": "quit"}
+        ]
+        self.player = {}
+        self.reset_game()
+    
+    def reset_game(self):
+        print("Resetting game state...")  # Debug
+        self.score = 0
+        self.life = 3
+        self.fruits = []
+        self.last_spawn_time = pygame.time.get_ticks()
         self.spawn_delay = random.randint(1000, 2000) 
 
     def spawn_fruit(self):
-        """Fait apparaître un fruit à un intervalle aléatoire."""
         current_time = pygame.time.get_ticks()
         if current_time - self.last_spawn_time > self.spawn_delay:
             new_fruit = Fruit(
-            x=random.randint(200, 600),
-            y=600 - 50,
-            velocity_x=random.uniform(-3, 3),
-            velocity_y=random.uniform(15, 25),
-            gravity=0.5
-        )
+                x = random.randint(200, 600),
+                y = 600 - 50,
+                velocity_x = random.uniform(-3, 3),
+                velocity_y = random.uniform(15, 25),
+                gravity = 0.5
+            )
             self.fruits.append(new_fruit)
             self.last_spawn_time = current_time
             self.spawn_delay = random.randint(1000, 2000)
 
     def handle_input(self, key):
+        """
+        Vérifie si la touche pressée correspond à la lettre d'un fruit non coupé.
+        Si oui, on coupe le fruit et on augmente le score.
+        """
         for fruit in self.fruits:
-            if key == KEY_MAPPING.get(fruit.letter):
-                print(f"✅ Bon fruit touché ! ({fruit.letter})")
-                self.fruits.remove(fruit)
-            else:  
-                self.life -= 1
-                print(f"Vie restante: {self.life}")            
+            if not fruit.cut and key == KEY_MAPPING.get(fruit.letter):
+                fruit.cut_fruit()
+                self.score += POINTS_PER_FRUIT
+
+    def handle_menu_click(self, pos):
+        for option in self.menu_options:
+            if option["rect"].collidepoint(pos):
+                print(f"Option du menu sélectionnée: {option['action']}")  # Debug
+                if option["action"] == "quit":
+                    self.state = "quit"
+                else:
+                    self.state = option["action"]
+                    if option["action"] == "game":
+                        self.reset_game()
+                return
+
+    def save_score(self):
+        """
+        Sauvegarde le score du joueur dans scores.txt
+        """
+        if not self.player.get("name"):
+            self.player["name"] = "Player"
+        
+        current_score = {
+            "name": self.player["name"],
+            "high_score": max(self.score, self.player.get("high_score", 0))
+        }
+        
+        try:
+            with open("scores.txt", "r") as f:
+                scores = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            scores = {}
+        scores[self.player["name"]] = current_score
+        
+        with open("scores.txt", "w") as f:
+            json.dump(scores, f, indent=4)
+
+    def display_score(self):
+        """
+        Lit le fichier scores.txt et retourne un dictionnaire de scores,
+        ou un dictionnaire vide si pas de fichier.
+        """
+        try:
+            with open("scores.txt", "r") as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            print("Aucun score trouvé")  # Debug
+            return {}
 
     def game_status(self):
         if self.life <= 0:
             return "lose"
-        return self.life
+        return "ongoing"
 
-    def run(self):  
+    def run(self):
         clock = pygame.time.Clock()
         running = True
-
+        
         while running:
-            self.render_game.screen.fill(self.render_game.white)
-
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    running = False
-
-                elif event.type == pygame.KEYDOWN:
-                    self.handle_input(event.key)
-
-
-                    #elif event.key not in [pygame.K_d, pygame.K_f, pygame.K_g]:
-                        #self.life -= 1
-                        #print(f"Vie restante: {self.life}")
-
+            if self.state == "menu":
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        running = False
+                    elif event.type == pygame.MOUSEBUTTONDOWN:
+                        self.handle_menu_click(event.pos)
+                
+                self.render_game.draw_menu_screen(self.menu_options)
+                pygame.display.flip()
+                clock.tick(30)
             
-            self.spawn_fruit() # Vérifie si un fruit doit apparaître
+            elif self.state == "score":
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        running = False
+                    elif event.type == pygame.KEYDOWN:
+                        if event.key == pygame.K_ESCAPE:
+                            self.state = "menu"
+                
+                scores = self.display_score() 
+                self.render_game.draw_score_screen(scores)
+                pygame.display.flip()
+                clock.tick(30)
 
+            elif self.state == "game":
+                self.render_game.screen.blit(self.render_game.background_image, (0, 0))
+                
+                self.render_game.draw_lives(self.life)
 
-            self.fruits = [fruit for fruit in self.fruits if fruit.y < self.render_game.screen_height] #Mise à jour et affichage des fruits
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT:
+                        running = False
+                    elif event.type == pygame.KEYDOWN:
+                        self.handle_input(event.key)
 
-            for fruit in self.fruits:
-                fruit.update()
-                fruit.draw_fruits(self.render_game.screen)
-                self.render_game.text_touch(fruit)
+                self.spawn_fruit()
 
-            game_status = self.game_status()
-            if game_status == "lose":
-                self.render_game.draw_text("You don't have any life left.", 230, 280, self.render_game.red)
+                for fruit in self.fruits:
+                    fruit.update(self.render_game.screen_width)
+                
+                for i in range(len(self.fruits)):
+                    for j in range(i + 1, len(self.fruits)):
+                        fruit1 = self.fruits[i]
+                        fruit2 = self.fruits[j]
+                        if not fruit1.cut and not fruit2.cut:
+                            if fruit1.image_rect.colliderect(fruit2.image_rect):
+                                fruit1.velocity_x, fruit2.velocity_x = -fruit1.velocity_x, -fruit2.velocity_x
 
-            pygame.display.flip()
-            clock.tick(30)  
+                now = pygame.time.get_ticks()
+                new_fruits = []
+
+                for fruit in self.fruits:
+                    if fruit.cut and fruit.cut_time is not None:
+                        if now - fruit.cut_time > 500:
+                            continue
+
+                    if fruit.y > self.render_game.screen_height:
+                        if not fruit.cut:
+                            self.life -= 1
+                        continue
+
+                    new_fruits.append(fruit)
+                    fruit.draw_fruits(self.render_game.screen)
+                    self.render_game.text_touch(fruit)
+
+                self.fruits = new_fruits
+
+                if self.game_status() == "lose":
+                    game_over_rect = self.render_game.game_over_image.get_rect()
+                    game_over_rect.center = (
+                        self.render_game.screen_width // 2,
+                        self.render_game.screen_height // 2
+                    )
+                    self.render_game.screen.blit(self.render_game.game_over_image, game_over_rect)
+
+                    pygame.display.flip()
+                    pygame.time.wait(2000)
+                    
+                    self.save_score()
+                    self.state = "menu"
+
+                pygame.display.flip()
+                clock.tick(30)
+
+            elif self.state == "quit":
+                running = False
 
         pygame.quit()
 
@@ -94,15 +209,3 @@ class FruitSlicerGame:
 if __name__ == "__main__":
     game = FruitSlicerGame()
     game.run()
-
-
-"""elif event.type == pygame.KEYDOWN:
-    if event.key == pygame.K_d:
-        print("Touche D pressée !") 
-        #EVENEMENT A DEFINIR
-    elif event.key == pygame.K_f:
-        print("Touche F pressée !")
-        #EVENEMENT A DEFINIR
-    elif event.key == pygame.K_g:
-        print("Touche G pressée !")
-        #EVENEMENT A DEFINIR"""
